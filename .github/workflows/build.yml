@@ -34,7 +34,7 @@ jobs:
       - name: Restore NuGet packages
         run: nuget restore packages.config -PackagesDirectory ..\packages -NonInteractive
 
-      - name: Install SCP:SL dedicated server
+      - name: Download SteamCMD
         shell: pwsh
         run: |
           $steamCmdRoot = Join-Path $env:RUNNER_TEMP 'steamcmd'
@@ -44,13 +44,25 @@ jobs:
           Invoke-WebRequest -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile $steamCmdArchive
           Expand-Archive -LiteralPath $steamCmdArchive -DestinationPath $steamCmdRoot -Force
 
-          $steamCmd = Join-Path $steamCmdRoot 'steamcmd.exe'
+          Add-Content -Path $env:GITHUB_ENV -Value "STEAMCMD_ROOT=$steamCmdRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "SCP_SL_SERVER_PATH=$serverPath"
+
+      - name: Bootstrap SteamCMD
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $steamCmd = Join-Path $env:STEAMCMD_ROOT 'steamcmd.exe'
           & $steamCmd '+quit'
           if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+            Write-Warning "SteamCMD bootstrap returned $LASTEXITCODE; continuing with installation."
           }
 
-          & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_update' '996560' 'validate' '+quit'
+      - name: Install SCP:SL dedicated server
+        shell: pwsh
+        run: |
+          $steamCmd = Join-Path $env:STEAMCMD_ROOT 'steamcmd.exe'
+          $serverPath = $env:SCP_SL_SERVER_PATH
+          & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_info_update' '1' '+app_update' '996560' 'validate' '+quit'
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
