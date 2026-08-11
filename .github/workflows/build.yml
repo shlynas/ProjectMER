@@ -95,11 +95,17 @@ jobs:
           $installSucceeded = $false
 
           if ($env:STEAMCMD_BOOTSTRAP_FAILED -eq 'false' -and (Test-Path -LiteralPath $steamCmd)) {
-            & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_info_update' '1' '+app_update' '996560' 'validate' '+quit'
-            if ($LASTEXITCODE -eq 0) {
-              $installSucceeded = $true
+            & $steamCmd '+login' 'anonymous' '+app_info_update' '1' '+app_info_print' '996560' '+quit'
+            $appInfoExitCode = $LASTEXITCODE
+            if ($appInfoExitCode -ne 0) {
+              Write-Warning "SCP:SL app-info refresh returned $appInfoExitCode; using fallback references."
             } else {
-              Write-Warning "SCP:SL installation returned $LASTEXITCODE; using fallback references."
+              & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_update' '996560' 'validate' '+quit'
+              if ($LASTEXITCODE -eq 0) {
+                $installSucceeded = $true
+              } else {
+                Write-Warning "SCP:SL installation returned $LASTEXITCODE; using fallback references."
+              }
             }
           } else {
             Write-Warning 'SteamCMD bootstrap failed; using fallback references.'
@@ -152,7 +158,7 @@ jobs:
                 -not (Test-Path -LiteralPath (Join-Path $fallbackReferencesPath $_))
               })
             if ($missingFiles.Count -gt 0) {
-              throw "Fallback references are incomplete at $fallbackReferencesPath: $($missingFiles -join ', ')"
+              throw "Fallback references are incomplete at ${fallbackReferencesPath}: $($missingFiles -join ', ')"
             }
 
             $selectedReferencesPath = $fallbackReferencesPath
