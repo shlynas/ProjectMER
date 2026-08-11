@@ -1,0 +1,110 @@
+name: build
+
+on:
+  push:
+    branches: [master, main, OtherObjects]
+  pull_request:
+    branches: [master, main, OtherObjects]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: Debug
+            audio_configuration: Debug
+          - variant: Release
+            audio_configuration: Release
+          - variant: Exiled
+            audio_configuration: Debug
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore packages.config -PackagesDirectory ..\packages -NonInteractive
+
+      - name: Install SCP:SL dedicated server
+        shell: pwsh
+        run: |
+          $steamCmdRoot = Join-Path $env:RUNNER_TEMP 'steamcmd'
+          $steamCmdArchive = Join-Path $env:RUNNER_TEMP 'steamcmd.zip'
+          $serverPath = Join-Path $env:RUNNER_TEMP 'scp-sl-server'
+
+          Invoke-WebRequest -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile $steamCmdArchive
+          Expand-Archive -LiteralPath $steamCmdArchive -DestinationPath $steamCmdRoot -Force
+
+          $steamCmd = Join-Path $steamCmdRoot 'steamcmd.exe'
+          & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_update' '996560' 'validate' '+quit'
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $referencePath = Join-Path $serverPath 'SCPSL_Data\Managed'
+          $requiredFiles = @('Assembly-CSharp-firstpass.dll', 'Mirror.dll', 'mscorlib.dll', 'UnityEngine.dll')
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $referencePath $file))) {
+              throw "Required reference $file was not installed at $referencePath"
+            }
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "REFERENCES_PATH=$referencePath"
+
+      - name: Install assembly publicizer
+        shell: pwsh
+        run: dotnet tool install --tool-path "$env:RUNNER_TEMP\publicizer" BepInEx.AssemblyPublicizer.Cli --version 0.4.3 --no-cache
+
+      - name: Publicize Mirror reference
+        shell: pwsh
+        run: |
+          $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror.dll'
+          $publicizedPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
+          $publicizer = Join-Path $env:RUNNER_TEMP 'publicizer\assembly-publicizer.exe'
+
+          if (-not (Test-Path -LiteralPath $mirrorPath)) {
+            throw "Mirror.dll was not restored at $mirrorPath"
+          }
+
+          & $publicizer $mirrorPath -o $publicizedPath -f
+
+      - name: Restore SDK package references
+        shell: pwsh
+        run: |
+          $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
+          & msbuild ProjectMER/ProjectMER.csproj /t:Restore /p:Configuration=Release /p:Platform=x64 "/p:ReferencesPath=$env:REFERENCES_PATH" "/p:MirrorPath=$mirrorPath" /m
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Rebuild solution (${{ matrix.variant }})
+        shell: pwsh
+        run: |
+          $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
+          & msbuild ProjectMER.sln /t:Rebuild "/p:Configuration=${{ matrix.variant }}" /p:Platform=x64 "/p:ReferencesPath=$env:REFERENCES_PATH" "/p:MirrorPath=$mirrorPath" /m
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Upload ProjectMER artifact (${{ matrix.variant }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectMER-${{ matrix.variant }}
+          path: ProjectMER/bin/x64/${{ matrix.variant }}/net48/ProjectMER.dll
+          if-no-files-found: error
+
+      - name: Upload AudioProjectMER artifact (${{ matrix.variant }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioProjectMER-${{ matrix.variant }}
+          path: AudioProjectMER/bin/${{ matrix.audio_configuration }}/AudioProjectMER.dll
+          if-no-files-found: error

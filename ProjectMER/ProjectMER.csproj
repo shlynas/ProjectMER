@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <LangVersion>default</LangVersion>
+    <LangVersion>preview</LangVersion>
     <TargetFramework>net4.8</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -9,6 +9,10 @@
     <Configurations>Debug;Release;Exiled</Configurations>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
     <Platforms>x64</Platforms>
+    <ReferencesPath Condition="'$(ReferencesPath)' == ''">..\..\packages\Exiled.Dev.References.1.0.4\lib\net48</ReferencesPath>
+    <ExModPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48</ExModPath>
+    <MirrorPath Condition="'$(MirrorPath)' == '' and Exists('$(ReferencesPath)\Mirror_publicized.dll')">$(ReferencesPath)\Mirror_publicized.dll</MirrorPath>
+    <MirrorPath Condition="'$(MirrorPath)' == ''">$(ReferencesPath)\Mirror.dll</MirrorPath>
   </PropertyGroup>
 
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Exiled|x64' ">
@@ -18,61 +22,64 @@
 
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
-      <HintPath>..\..\..\DLL\publicized_assemblies\Assembly-CSharp_publicized.dll</HintPath>
+      <HintPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48\Assembly-CSharp-Publicized.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>..\..\..\DLL\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>$(ReferencesPath)\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
     <Reference Include="CommandSystem.Core">
-      <HintPath>..\..\..\DLL\CommandSystem.Core.dll</HintPath>
+      <HintPath Condition="Exists('$(ReferencesPath)\CommandSystem.Core.dll')">$(ReferencesPath)\CommandSystem.Core.dll</HintPath>
+      <HintPath Condition="!Exists('$(ReferencesPath)\CommandSystem.Core.dll')">$(ExModPath)\CommandSystem.Core.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.API" Condition=" '$(Configuration)|$(Platform)' == 'Exiled|x64' ">
-      <HintPath>..\..\..\DLL\EXILED\Exiled.API.dll</HintPath>
+      <HintPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48\Exiled.API.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.CustomItems" Condition=" '$(Configuration)|$(Platform)' == 'Exiled|x64' ">
-      <HintPath>..\..\..\DLL\EXILED\Exiled.CustomItems.dll</HintPath>
+      <HintPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48\Exiled.CustomItems.dll</HintPath>
     </Reference>
     <Reference Include="LabApi">
-      <HintPath>..\..\..\DLL\LabApi.dll</HintPath>
+      <HintPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48\LabApi.dll</HintPath>
     </Reference>
     <Reference Include="Mirror">
-      <HintPath>..\..\..\DLL\publicized_assemblies\Mirror_publicized.dll</HintPath>
+      <HintPath>$(MirrorPath)</HintPath>
     </Reference>
     <Reference Include="mscorlib">
-      <HintPath>..\..\..\DLL\mscorlib.dll</HintPath>
+      <HintPath>$(ReferencesPath)\mscorlib.dll</HintPath>
     </Reference>
     <Reference Include="NorthwoodLib">
-      <HintPath>..\..\..\DLL\NorthwoodLib.dll</HintPath>
+      <HintPath Condition="Exists('$(ReferencesPath)\NorthwoodLib.dll')">$(ReferencesPath)\NorthwoodLib.dll</HintPath>
+      <HintPath Condition="!Exists('$(ReferencesPath)\NorthwoodLib.dll')">$(ExModPath)\NorthwoodLib.dll</HintPath>
     </Reference>
     <Reference Include="Pooling">
-      <HintPath>..\..\..\DLL\Pooling.dll</HintPath>
+      <HintPath>$(ReferencesPath)\Pooling.dll</HintPath>
     </Reference>
     <Reference Include="System">
-      <HintPath>..\..\..\DLL\System.dll</HintPath>
+      <HintPath>$(ReferencesPath)\System.dll</HintPath>
     </Reference>
     <Reference Include="System.Core">
-      <HintPath>..\..\..\DLL\System.Core.dll</HintPath>
+      <HintPath>$(ReferencesPath)\System.Core.dll</HintPath>
     </Reference>
     <Reference Include="Unity.TextMeshPro">
-      <HintPath>..\..\..\DLL\Unity.TextMeshPro.dll</HintPath>
+      <HintPath>$(ReferencesPath)\Unity.TextMeshPro.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>..\..\..\DLL\UnityEngine.dll</HintPath>
+      <HintPath>$(ReferencesPath)\UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AnimationModule">
-      <HintPath>..\..\..\DLL\UnityEngine.AnimationModule.dll</HintPath>
+      <HintPath>$(ReferencesPath)\UnityEngine.AnimationModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>..\..\..\DLL\UnityEngine.AssetBundleModule.dll</HintPath>
+      <HintPath>$(ReferencesPath)\UnityEngine.AssetBundleModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>..\..\..\DLL\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(ReferencesPath)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>..\..\..\DLL\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(ReferencesPath)\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
     <Reference Include="YamlDotNet">
-      <HintPath>..\..\..\DLL\YamlDotNet.dll</HintPath>
+      <HintPath Condition="Exists('$(ReferencesPath)\YamlDotNet.dll')">$(ReferencesPath)\YamlDotNet.dll</HintPath>
+      <HintPath Condition="!Exists('$(ReferencesPath)\YamlDotNet.dll')">$(ExModPath)\YamlDotNet.dll</HintPath>
     </Reference>
   </ItemGroup>
 

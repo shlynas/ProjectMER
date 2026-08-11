@@ -13,6 +13,8 @@
         <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
         <FileAlignment>512</FileAlignment>
         <LangVersion>default</LangVersion>
+        <ReferencesPath Condition="'$(ReferencesPath)' == ''">..\..\packages\Exiled.Dev.References.1.0.4\lib\net48</ReferencesPath>
+        <ExModPath>..\..\packages\ExMod.Exiled.9.14.2\lib\net48</ExModPath>
     </PropertyGroup>
     <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
         <PlatformTarget>x64</PlatformTarget>
@@ -48,47 +50,48 @@
     </ItemGroup>
     <ItemGroup>
       <Reference Include="Assembly-CSharp">
-        <HintPath>..\..\..\DLL\publicized_assemblies\Assembly-CSharp_publicized.dll</HintPath>
+        <HintPath>$(ExModPath)\Assembly-CSharp-Publicized.dll</HintPath>
       </Reference>
       <Reference Include="Assembly-CSharp-firstpass">
-        <HintPath>..\..\..\DLL\Assembly-CSharp-firstpass.dll</HintPath>
+        <HintPath>$(ReferencesPath)\Assembly-CSharp-firstpass.dll</HintPath>
       </Reference>
       <Reference Include="CommandSystem.Core">
-        <HintPath>..\..\..\DLL\CommandSystem.Core.dll</HintPath>
+        <HintPath Condition="Exists('$(ReferencesPath)\CommandSystem.Core.dll')">$(ReferencesPath)\CommandSystem.Core.dll</HintPath>
+        <HintPath Condition="!Exists('$(ReferencesPath)\CommandSystem.Core.dll')">$(ExModPath)\CommandSystem.Core.dll</HintPath>
       </Reference>
       <Reference Include="LabApi">
-        <HintPath>..\..\..\DLL\LabApi.dll</HintPath>
+        <HintPath>$(ExModPath)\LabApi.dll</HintPath>
       </Reference>
       <Reference Include="NAudio.Core">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\NAudio.Core.dll</HintPath>
+        <HintPath>..\..\packages\NAudio.Core.2.3.0\lib\netstandard2.0\NAudio.Core.dll</HintPath>
       </Reference>
       <Reference Include="NAudio.Vorbis">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\NAudio.Vorbis.dll</HintPath>
+        <HintPath>..\..\packages\NAudio.Vorbis.1.5.0\lib\netstandard2.0\NAudio.Vorbis.dll</HintPath>
       </Reference>
       <Reference Include="NLayer">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\NLayer.dll</HintPath>
+        <HintPath>..\..\packages\NLayer.2.0.1\lib\netstandard2.0\NLayer.dll</HintPath>
       </Reference>
       <Reference Include="NLayer.NAudioSupport">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\NLayer.NAudioSupport.dll</HintPath>
+        <HintPath>..\..\packages\NLayer.NAudioSupport.2.0.1\lib\netstandard2.0\NLayer.NAudioSupport.dll</HintPath>
       </Reference>
       <Reference Include="NVorbis">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\NVorbis.dll</HintPath>
+        <HintPath>..\..\packages\NVorbis.0.10.5\lib\net45\NVorbis.dll</HintPath>
       </Reference>
       <Reference Include="SecretLabNAudio.Core">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\SecretLabNAudio.Core.dll</HintPath>
+        <HintPath>..\..\packages\SecretLabNAudio.Core.2.1.0\lib\net48\SecretLabNAudio.Core.dll</HintPath>
       </Reference>
       <Reference Include="System" />
       <Reference Include="System.ValueTuple">
-        <HintPath>..\..\..\DLL\SecretLabNAudio\System.ValueTuple.dll</HintPath>
+        <HintPath>..\..\packages\System.ValueTuple.4.6.2\lib\net47\System.ValueTuple.dll</HintPath>
       </Reference>
       <Reference Include="UnityEngine">
-        <HintPath>..\..\..\DLL\UnityEngine.dll</HintPath>
+        <HintPath>$(ReferencesPath)\UnityEngine.dll</HintPath>
       </Reference>
       <Reference Include="UnityEngine.CoreModule">
-        <HintPath>..\..\..\DLL\UnityEngine.CoreModule.dll</HintPath>
+        <HintPath>$(ReferencesPath)\UnityEngine.CoreModule.dll</HintPath>
       </Reference>
       <Reference Include="UnityEngine.PhysicsModule">
-        <HintPath>..\..\..\DLL\UnityEngine.PhysicsModule.dll</HintPath>
+        <HintPath>$(ReferencesPath)\UnityEngine.PhysicsModule.dll</HintPath>
       </Reference>
     </ItemGroup>
     <ItemGroup>
