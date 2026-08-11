@@ -45,6 +45,11 @@ jobs:
           Expand-Archive -LiteralPath $steamCmdArchive -DestinationPath $steamCmdRoot -Force
 
           $steamCmd = Join-Path $steamCmdRoot 'steamcmd.exe'
+          & $steamCmd '+quit'
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
           & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_update' '996560' 'validate' '+quit'
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -99,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ProjectMER-${{ matrix.variant }}
-          path: ProjectMER/bin/x64/${{ matrix.variant }}/net48/ProjectMER.dll
+          path: ProjectMER/bin/x64/${{ matrix.variant }}/net4.8/ProjectMER.dll
           if-no-files-found: error
 
       - name: Upload AudioProjectMER artifact (${{ matrix.variant }})
