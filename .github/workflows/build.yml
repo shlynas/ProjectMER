@@ -189,15 +189,23 @@ jobs:
         run: |
           $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror.dll'
           $publicizedPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
-          $publicizer = Join-Path $env:RUNNER_TEMP 'publicizer\assembly-publicizer.exe'
-          $env:DOTNET_ROOT = $env:PUBLICIZER_DOTNET_ROOT
-          $env:DOTNET_ROOT_X64 = $env:PUBLICIZER_DOTNET_ROOT
+          $dotnet = Join-Path $env:PUBLICIZER_DOTNET_ROOT 'dotnet.exe'
+          $publicizer = Join-Path $env:RUNNER_TEMP 'publicizer\.store\bepinex.assemblypublicizer.cli\0.4.3\bepinex.assemblypublicizer.cli\0.4.3\tools\net6.0\any\BepInEx.AssemblyPublicizer.Cli.dll'
 
           if (-not (Test-Path -LiteralPath $mirrorPath)) {
             throw "Mirror.dll was not restored at $mirrorPath"
           }
+          if (-not (Test-Path -LiteralPath $dotnet)) {
+            throw ".NET runtime host was not installed at $dotnet"
+          }
+          if (-not (Test-Path -LiteralPath $publicizer)) {
+            throw "Publicizer assembly was not installed at $publicizer"
+          }
 
-          & $publicizer $mirrorPath -o $publicizedPath -f
+          & $dotnet $publicizer $mirrorPath -o $publicizedPath -f
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Restore SDK package references
         shell: pwsh
