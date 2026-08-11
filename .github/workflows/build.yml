@@ -171,12 +171,27 @@ jobs:
         shell: pwsh
         run: dotnet tool install --tool-path "$env:RUNNER_TEMP\publicizer" BepInEx.AssemblyPublicizer.Cli --version 0.4.3 --no-cache
 
+      - name: Install .NET 6 runtime for assembly publicizer
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1'
+          $runtimePath = Join-Path $env:RUNNER_TEMP 'dotnet6'
+          Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+          & $installer -Runtime dotnet -Channel 6.0 -Architecture x64 -InstallDir $runtimePath -NoPath
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "PUBLICIZER_DOTNET_ROOT=$runtimePath"
+
       - name: Publicize Mirror reference
         shell: pwsh
         run: |
           $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror.dll'
           $publicizedPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
           $publicizer = Join-Path $env:RUNNER_TEMP 'publicizer\assembly-publicizer.exe'
+          $env:DOTNET_ROOT = $env:PUBLICIZER_DOTNET_ROOT
+          $env:DOTNET_ROOT_X64 = $env:PUBLICIZER_DOTNET_ROOT
 
           if (-not (Test-Path -LiteralPath $mirrorPath)) {
             throw "Mirror.dll was not restored at $mirrorPath"
