@@ -36,46 +36,130 @@ jobs:
 
       - name: Download SteamCMD
         shell: pwsh
+        continue-on-error: true
         run: |
           $steamCmdRoot = Join-Path $env:RUNNER_TEMP 'steamcmd'
           $steamCmdArchive = Join-Path $env:RUNNER_TEMP 'steamcmd.zip'
           $serverPath = Join-Path $env:RUNNER_TEMP 'scp-sl-server'
 
-          Invoke-WebRequest -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile $steamCmdArchive
-          Expand-Archive -LiteralPath $steamCmdArchive -DestinationPath $steamCmdRoot -Force
-
           Add-Content -Path $env:GITHUB_ENV -Value "STEAMCMD_ROOT=$steamCmdRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "SCP_SL_SERVER_PATH=$serverPath"
+
+          try {
+            Invoke-WebRequest -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile $steamCmdArchive -ErrorAction Stop
+            Expand-Archive -LiteralPath $steamCmdArchive -DestinationPath $steamCmdRoot -Force -ErrorAction Stop
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_DOWNLOAD_FAILED=false'
+          } catch {
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_DOWNLOAD_FAILED=true'
+            Write-Warning "SteamCMD download failed: $($_.Exception.Message)"
+          }
 
       - name: Bootstrap SteamCMD
         shell: pwsh
         continue-on-error: true
         run: |
           $steamCmd = Join-Path $env:STEAMCMD_ROOT 'steamcmd.exe'
-          & $steamCmd '+quit'
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "SteamCMD bootstrap returned $LASTEXITCODE; continuing with installation."
+          $bootstrapSucceeded = $false
+
+          if ($env:STEAMCMD_DOWNLOAD_FAILED -ne 'true' -and (Test-Path -LiteralPath $steamCmd)) {
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              & $steamCmd '+quit'
+              $exitCode = $LASTEXITCODE
+              if ($exitCode -eq 0) {
+                $bootstrapSucceeded = $true
+                break
+              }
+
+              Write-Warning "SteamCMD bootstrap attempt $attempt returned $exitCode."
+              if ($attempt -lt 5) {
+                Start-Sleep -Seconds 2
+              }
+            }
+          } else {
+            Write-Warning 'SteamCMD is unavailable; using fallback references.'
+          }
+
+          if ($bootstrapSucceeded) {
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_BOOTSTRAP_FAILED=false'
+          } else {
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_BOOTSTRAP_FAILED=true'
+            Write-Warning 'SteamCMD bootstrap did not complete after 5 attempts.'
           }
 
       - name: Install SCP:SL dedicated server
         shell: pwsh
+        continue-on-error: true
         run: |
           $steamCmd = Join-Path $env:STEAMCMD_ROOT 'steamcmd.exe'
           $serverPath = $env:SCP_SL_SERVER_PATH
-          & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_info_update' '1' '+app_update' '996560' 'validate' '+quit'
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          $installSucceeded = $false
+
+          if ($env:STEAMCMD_BOOTSTRAP_FAILED -eq 'false' -and (Test-Path -LiteralPath $steamCmd)) {
+            & $steamCmd '+force_install_dir' $serverPath '+login' 'anonymous' '+app_info_update' '1' '+app_update' '996560' 'validate' '+quit'
+            if ($LASTEXITCODE -eq 0) {
+              $installSucceeded = $true
+            } else {
+              Write-Warning "SCP:SL installation returned $LASTEXITCODE; using fallback references."
+            }
+          } else {
+            Write-Warning 'SteamCMD bootstrap failed; using fallback references.'
           }
 
-          $referencePath = Join-Path $serverPath 'SCPSL_Data\Managed'
-          $requiredFiles = @('Assembly-CSharp-firstpass.dll', 'Mirror.dll', 'mscorlib.dll', 'UnityEngine.dll')
-          foreach ($file in $requiredFiles) {
-            if (-not (Test-Path -LiteralPath (Join-Path $referencePath $file))) {
-              throw "Required reference $file was not installed at $referencePath"
+          if ($installSucceeded) {
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_INSTALL_FAILED=false'
+          } else {
+            Add-Content -Path $env:GITHUB_ENV -Value 'STEAMCMD_INSTALL_FAILED=true'
+          }
+
+      - name: Select game references
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            'Assembly-CSharp-firstpass.dll'
+            'CommandSystem.Core.dll'
+            'Mirror.dll'
+            'mscorlib.dll'
+            'NorthwoodLib.dll'
+            'Pooling.dll'
+            'System.dll'
+            'System.Core.dll'
+            'Unity.TextMeshPro.dll'
+            'UnityEngine.dll'
+            'UnityEngine.AnimationModule.dll'
+            'UnityEngine.AssetBundleModule.dll'
+            'UnityEngine.CoreModule.dll'
+            'UnityEngine.PhysicsModule.dll'
+            'YamlDotNet.dll'
+          )
+          $serverReferencesPath = Join-Path $env:SCP_SL_SERVER_PATH 'SCPSL_Data\Managed'
+          $fallbackReferencesPath = Join-Path $env:GITHUB_WORKSPACE '..\packages\Exiled.Dev.References.1.0.4\lib\net48'
+          $selectedReferencesPath = $null
+
+          if ($env:STEAMCMD_INSTALL_FAILED -eq 'false') {
+            $missingFiles = @($requiredFiles | Where-Object {
+                -not (Test-Path -LiteralPath (Join-Path $serverReferencesPath $_))
+              })
+            if ($missingFiles.Count -eq 0) {
+              $selectedReferencesPath = $serverReferencesPath
+              Write-Host "Using SteamCMD references from $selectedReferencesPath"
+            } else {
+              Write-Warning "SteamCMD references are incomplete: $($missingFiles -join ', ')"
             }
           }
 
-          Add-Content -Path $env:GITHUB_ENV -Value "REFERENCES_PATH=$referencePath"
+          if ($null -eq $selectedReferencesPath) {
+            $missingFiles = @($requiredFiles | Where-Object {
+                -not (Test-Path -LiteralPath (Join-Path $fallbackReferencesPath $_))
+              })
+            if ($missingFiles.Count -gt 0) {
+              throw "Fallback references are incomplete at $fallbackReferencesPath: $($missingFiles -join ', ')"
+            }
+
+            $selectedReferencesPath = $fallbackReferencesPath
+            Write-Warning "Using Exiled.Dev.References fallback from $selectedReferencesPath"
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "REFERENCES_PATH=$selectedReferencesPath"
 
       - name: Install assembly publicizer
         shell: pwsh
