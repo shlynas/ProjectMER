@@ -182,14 +182,13 @@ jobs:
             exit $LASTEXITCODE
           }
 
-          Add-Content -Path $env:GITHUB_ENV -Value "PUBLICIZER_DOTNET_ROOT=$runtimePath"
-
       - name: Publicize Mirror reference
         shell: pwsh
         run: |
           $mirrorPath = Join-Path $env:REFERENCES_PATH 'Mirror.dll'
           $publicizedPath = Join-Path $env:REFERENCES_PATH 'Mirror_publicized.dll'
-          $dotnet = Join-Path $env:PUBLICIZER_DOTNET_ROOT 'dotnet.exe'
+          $runtimePath = Join-Path $env:RUNNER_TEMP 'dotnet6'
+          $dotnet = Join-Path $runtimePath 'dotnet.exe'
           $publicizer = Join-Path $env:RUNNER_TEMP 'publicizer\.store\bepinex.assemblypublicizer.cli\0.4.3\bepinex.assemblypublicizer.cli\0.4.3\tools\net6.0\any\BepInEx.AssemblyPublicizer.Cli.dll'
 
           if (-not (Test-Path -LiteralPath $mirrorPath)) {
