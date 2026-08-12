@@ -36,6 +36,8 @@ public class ToolGunItem
 		{ ToolGunObjectType.Waypoint, typeof(SerializableWaypoint) },
 		{ ToolGunObjectType.PlayerBlocker, typeof(SerializablePlayerBlocker) },
 		{ ToolGunObjectType.Generator, typeof(SerializableGenerator) },
+		{ ToolGunObjectType.Connector, typeof(SerializableConnector) },
+		{ ToolGunObjectType.PrismaticCloud, typeof(SerializablePrismaticCloud) },
 	};
 
 	private ToolGunObjectType _selectedObjectToSpawn;

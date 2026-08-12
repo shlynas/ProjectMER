@@ -117,6 +117,16 @@ public class Grab : ICommand
 				NetworkServer.UnSpawn(mapEditorObject.gameObject);
 				NetworkServer.Spawn(mapEditorObject.gameObject);
 			}
+
+			if (mapEditorObject.Base is SerializableConnector && mapEditorObject.TryGetComponent(out StructurePositionSync connectorPositionSync))
+			{
+				connectorPositionSync.Network_position = newPos;
+				NetworkServer.UnSpawn(mapEditorObject.gameObject);
+				NetworkServer.Spawn(mapEditorObject.gameObject);
+			}
+
+			if (mapEditorObject.Base is SerializablePrismaticCloud && mapEditorObject.TryGetComponent(out Hazards.PrismaticCloud prismaticCloud))
+				SerializablePrismaticCloud.SyncPosition(prismaticCloud, newPos);
 			
 			if (mapEditorObject.Base is SerializableGenerator _ && mapEditorObject.TryGetComponent(out StructurePositionSync structurePositionSync))
 			{

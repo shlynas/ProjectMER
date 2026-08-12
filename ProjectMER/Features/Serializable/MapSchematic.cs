@@ -56,6 +56,10 @@ public class MapSchematic
 	
 	public Dictionary<string, SerializableGenerator> Generators { get; set; } = [];
 
+	public Dictionary<string, SerializableConnector> Connectors { get; set; } = [];
+
+	public Dictionary<string, SerializablePrismaticCloud> PrismaticClouds { get; set; } = [];
+
 	public List<MapEditorObject> SpawnedObjects = [];
 
 	public MapSchematic Merge(MapSchematic other)
@@ -76,6 +80,8 @@ public class MapSchematic
 		Waypoints.AddRange(other.Waypoints);
 		PlayerBlockers.AddRange(other.PlayerBlockers);
 		Generators.AddRange(other.Generators);
+		Connectors.AddRange(other.Connectors);
+		PrismaticClouds.AddRange(other.PrismaticClouds);
 		Schematics.AddRange(other.Schematics);
 
 		return this;
@@ -122,6 +128,8 @@ public class MapSchematic
 		Waypoints.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
 		PlayerBlockers.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
 		Generators.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
+		Connectors.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
+		PrismaticClouds.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
 		
 		if (ProjectMER.Singleton.Config.BackwardСompatibility)
 			Schematics.ForEach(kVP => SpawnObject(kVP.Key, kVP.Value));
@@ -214,6 +222,12 @@ public class MapSchematic
 		if (Generators.TryAdd(id, serializableObject))
 			return true;
 
+		if (Connectors.TryAdd(id, serializableObject))
+			return true;
+
+		if (PrismaticClouds.TryAdd(id, serializableObject))
+			return true;
+
 		IsDirty = dirtyPrevValue;
 		return false;
 	}
@@ -272,6 +286,12 @@ public class MapSchematic
 			return true;
 		
 		if (Generators.Remove(id))
+			return true;
+
+		if (Connectors.Remove(id))
+			return true;
+
+		if (PrismaticClouds.Remove(id))
 			return true;
 
 		IsDirty = dirtyPrevValue;

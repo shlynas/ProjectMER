@@ -10,6 +10,12 @@ namespace ProjectMER.Features.Serializable;
 
 public sealed class SerializableGenerator : SerializableObject
 {
+	public override Vector3 Rotation
+	{
+		get => base.Rotation;
+		set => base.Rotation = new Vector3(0f, value.y, 0f);
+	}
+
     public float TotalActivationTime { get; set; } = 125f;
     public float TotalDeactivationTime { get; set; } = 125f;
     public bool IsOpen { get; set; }

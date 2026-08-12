@@ -46,8 +46,14 @@ public class MapEditorObject : MonoBehaviour
 			{
 				map.SpawnObject(Id, Base);
 
-				if (player is not null)
-					ToolGunHandler.SelectObject(player, Map.SpawnedObjects.Find(x => x.Id == Id));
+				MapEditorObject newObject = map.SpawnedObjects.Find(x => x.Id == Id);
+				if (newObject != null)
+				{
+					IndicatorObject.TrySpawnOrUpdateIndicator(newObject);
+				}
+
+				if (player is not null && newObject != null)
+					ToolGunHandler.SelectObject(player, newObject);
 			});
 
 			return;

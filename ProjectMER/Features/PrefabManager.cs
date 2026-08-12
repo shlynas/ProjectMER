@@ -67,6 +67,7 @@ public static class PrefabManager
 	public static GameObject HugeOrangePipes { get; private set; }
 	public static GameObject PipesLong { get; private set; }
 
+	public static GameObject PrismaticCloud { get; private set; }
 	public static Scp079Generator Generator { get; private set; }
 	
 	public static bool Initialized { get; private set; }
@@ -286,6 +287,9 @@ public static class PrefabManager
 					continue;
 				case "Pipes Long Open Connector":
 					PipesLong = gameObject;
+					continue;
+				case "PrismaticCloud":
+					PrismaticCloud = gameObject;
 					continue;
 			}
 			

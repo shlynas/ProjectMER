@@ -18,7 +18,7 @@ jobs:
           - variant: Release
             audio_configuration: Release
           - variant: Exiled
-            audio_configuration: Debug
+            audio_configuration: Release
     runs-on: windows-latest
 
     steps:

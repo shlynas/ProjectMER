@@ -13,7 +13,7 @@ public class IndicatorObject : MapEditorObject
 
 	public static bool TrySpawnOrUpdateIndicator(MapEditorObject mapEditorObject)
 	{
-		if (mapEditorObject.Base is not IIndicatorDefinition indicatorDefinition)
+		if (mapEditorObject == null || mapEditorObject.Base is not IIndicatorDefinition indicatorDefinition)
 			return false;
 
 		if (TryGetIndicator(mapEditorObject, out IndicatorObject indicator))
@@ -40,7 +40,7 @@ public class IndicatorObject : MapEditorObject
 	public static bool TryGetIndicator(MapEditorObject mapEditorObject, out IndicatorObject indicator)
 	{
 		indicator = null!;
-		if (mapEditorObject.Base is not IIndicatorDefinition _)
+		if (mapEditorObject == null || mapEditorObject.Base is not IIndicatorDefinition _)
 			return false;
 
 		if (!Dictionary.ContainsValue(mapEditorObject))
@@ -52,10 +52,11 @@ public class IndicatorObject : MapEditorObject
 
 	public static bool TryDestroyIndicator(MapEditorObject mapEditorObject)
 	{
-		if (!TryGetIndicator(mapEditorObject, out IndicatorObject indicator))
+		if (mapEditorObject == null || !TryGetIndicator(mapEditorObject, out IndicatorObject indicator))
 			return false;
 
-		if (Dictionary[indicator].TryGetComponent(out WaypointToy waypoint))
+		MapEditorObject target = Dictionary[indicator];
+		if (target != null && target.gameObject != null && target.TryGetComponent(out WaypointToy waypoint))
 		{
 			waypoint.NetworkVisualizeBounds = false;
 		}
@@ -69,7 +70,10 @@ public class IndicatorObject : MapEditorObject
 	{
 		List<MapEditorObject> values = ListPool<MapEditorObject>.Shared.Rent(Dictionary.Values);
 		foreach (MapEditorObject mapEditorObject in values)
-			TryDestroyIndicator(mapEditorObject);
+		{
+			if (mapEditorObject != null)
+				TryDestroyIndicator(mapEditorObject);
+		}
 
 		ListPool<MapEditorObject>.Shared.Return(values);
 		Dictionary.Clear();
@@ -83,10 +87,24 @@ public class IndicatorObject : MapEditorObject
 		{
 			foreach (MapEditorObject mapEditorObject in map.SpawnedObjects)
 			{
+				if (mapEditorObject == null || mapEditorObject.gameObject == null)
+					continue;
+
 				TrySpawnOrUpdateIndicator(mapEditorObject);
 			}
 		}
 	}
 
-	public void Update() => transform.position = Dictionary[this].transform.position;
+	public void Update()
+	{
+		if (Dictionary.TryGetValue(this, out MapEditorObject target) && target != null && target.gameObject != null)
+		{
+			transform.position = target.transform.position;
+		}
+		else
+		{
+			Dictionary.Remove(this);
+			Destroy(gameObject);
+		}
+	}
 }

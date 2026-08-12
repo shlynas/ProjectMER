@@ -101,18 +101,26 @@ public static class ToolGunUI
 		string name = " ";
 		if (ToolGunHandler.Raycast(player, out RaycastHit hit))
 		{
-			if (hit.transform.TryGetComponentInParent(out MapEditorObject mapEditorObject))
+			if (hit.transform.TryGetComponentInParent(out MapEditorObject mapEditorObject) && mapEditorObject != null)
 			{
 				if (mapEditorObject is IndicatorObject indicatorObject)
-					mapEditorObject = IndicatorObject.Dictionary[indicatorObject];
-
-				if (mapEditorObject.gameObject.TryGetComponent(out SchematicObject schematicObject))
 				{
-					name = schematicObject.Name.ToUpper();
+					if (!IndicatorObject.Dictionary.TryGetValue(indicatorObject, out mapEditorObject) || mapEditorObject == null)
+					{
+						mapEditorObject = null!;
+					}
 				}
-				else
+
+				if (mapEditorObject != null)
 				{
-					name = mapEditorObject.Base.ToString().Split('.').Last().Replace("Serializable", "").ToUpper();
+					if (mapEditorObject.TryGetComponent(out SchematicObject schematicObject) && schematicObject != null)
+					{
+						name = schematicObject.Name.ToUpper();
+					}
+					else if (mapEditorObject.Base != null)
+					{
+						name = mapEditorObject.Base.GetType().Name.Replace("Serializable", "").ToUpper();
+					}
 				}
 			}
 		}

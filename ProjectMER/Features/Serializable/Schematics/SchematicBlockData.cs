@@ -1,5 +1,6 @@
 using AdminToys;
 using Footprinting;
+using Hazards;
 using Interactables.Interobjects.DoorUtils;
 using InventorySystem.Items.Firearms.Attachments;
 using InventorySystem.Items.Pickups;
@@ -48,10 +49,13 @@ public class SchematicBlockData
 
 	public virtual BlockType BlockType { get; set; }
 
-	public virtual Dictionary<string, object> Properties { get; set; }
+	public virtual Dictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
 
 	public GameObject? Create(SchematicObject schematicObject, Transform parentTransform)
 	{
+		if (BlockType == BlockType.Generator)
+			Rotation = new Vector3(0f, Rotation.y, 0f);
+
 		var commonBlock = BlockType is BlockType.Light or BlockType.Empty or BlockType.Interactable
 			or BlockType.Primitive or BlockType.Schematic or BlockType.Pickup or BlockType.Waypoint or BlockType.Text;
 
@@ -100,6 +104,7 @@ public class SchematicBlockData
 			BlockType.AudioPlayer => CreateAudioPlayer(schematicObject),
 			BlockType.CullingZone => CreateCullingZone(),
 			BlockType.Generator => CreateGenerator(),
+			BlockType.PrismaticCloud => CreatePrismaticCloud(),
 			_ => CreateEmpty(fallback: true)
 		};
 		
@@ -166,6 +171,9 @@ public class SchematicBlockData
 
 		if (BlockType == BlockType.Teleport)
 			transform.position += Vector3.up;
+
+		if (gameObject.TryGetComponent(out PrismaticCloud prismaticCloud))
+			SerializablePrismaticCloud.SyncPosition(prismaticCloud, transform.position);
 
 		return gameObject;
 	}
@@ -750,6 +758,32 @@ public class SchematicBlockData
 		}
 		
 		return empty;
+	}
+
+	private GameObject CreatePrismaticCloud()
+	{
+		GameObject cloudObject = GameObject.Instantiate(PrefabManager.PrismaticCloud);
+		if (!cloudObject.TryGetComponent(out PrismaticCloud cloud))
+			return cloudObject;
+
+		SerializablePrismaticCloud settings = new()
+		{
+			HazardDuration = cloud.HazardDuration,
+		};
+
+		if (Properties.TryGetValue("HazardDuration", out object hazardDurationObject))
+			settings.HazardDuration = Convert.ToSingle(hazardDurationObject);
+		if (Properties.TryGetValue("EffectName", out object effectNameObject))
+			settings.EffectName = Convert.ToString(effectNameObject);
+		if (Properties.TryGetValue("EffectIntensity", out object effectIntensityObject))
+			settings.EffectIntensity = Convert.ToByte(effectIntensityObject);
+		if (Properties.TryGetValue("EffectDuration", out object effectDurationObject))
+			settings.EffectDuration = Convert.ToSingle(effectDurationObject);
+		if (Properties.TryGetValue("IsDestroyable", out object isDestroyableObject))
+			settings.IsDestroyable = Convert.ToBoolean(isDestroyableObject);
+
+		settings.Configure(cloud);
+		return cloudObject;
 	}
 
 	public GameObject? CreateGenerator()

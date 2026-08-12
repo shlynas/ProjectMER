@@ -19,4 +19,6 @@ public enum ToolGunObjectType
 	Waypoint = 14,
 	PlayerBlocker = 15,
 	Generator = 16,
+	Connector = 17,
+	PrismaticCloud = 18,
 }

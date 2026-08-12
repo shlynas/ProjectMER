@@ -1,4 +1,5 @@
 using AdminToys;
+using Hazards;
 using LabApi.Features.Wrappers;
 using MapGeneration.Distributors;
 using Mirror;
@@ -111,7 +112,8 @@ public class SerializableSchematic : SerializableObject, IIndicatorDefinition
 			    BlockType.Door and not 
 			    BlockType.CullingParent and not
 			    BlockType.MirrorPrefab and not
-			    BlockType.Generator)
+			    BlockType.Generator and not
+			    BlockType.PrismaticCloud)
 				continue;
 			var gameObject = schematicObject.ObjectFromId[block.ObjectId].gameObject;
 			
@@ -143,6 +145,9 @@ public class SerializableSchematic : SerializableObject, IIndicatorDefinition
 				structurePositionSync.Network_rotationY =
 					(sbyte)Mathf.RoundToInt(gameObject.transform.rotation.eulerAngles.y / 5.625f);
 			}
+
+			if (block.BlockType == BlockType.PrismaticCloud && gameObject.TryGetComponent(out PrismaticCloud prismaticCloud))
+				SerializablePrismaticCloud.SyncPosition(prismaticCloud, gameObject.transform.position);
 
 			if (gameObject.TryGetComponent(out SpawnableCullingParent spawnableCullingParent))
 			{
