@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using AdminToys;
 using Hazards;
 using LabApi.Features.Wrappers;
+using MEC;
 using Mirror;
 using ProjectMER.Features.Extensions;
 using ProjectMER.Features.Interfaces;
@@ -46,22 +47,51 @@ public sealed class SerializablePrismaticCloud : SerializableObject, IIndicatorD
 
 	public override GameObject SpawnOrUpdateObject(Room? room = null, GameObject? instance = null)
 	{
-		GameObject cloudObject = instance == null
-			? UnityEngine.Object.Instantiate(PrefabManager.PrismaticCloud)
-			: instance;
-
 		Vector3 position = room.GetAbsolutePosition(Position);
 		Quaternion rotation = room.GetAbsoluteRotation(Rotation);
 		_prevIndex = Index;
 
-		cloudObject.transform.SetPositionAndRotation(position, rotation);
+		GameObject cloudObject;
+		bool isNew = instance == null;
+
+		if (isNew)
+		{
+			cloudObject = UnityEngine.Object.Instantiate(PrefabManager.PrismaticCloud);
+		}
+		else
+		{
+			cloudObject = instance;
+			Quaternion prevRotation = cloudObject.transform.rotation;
+			cloudObject.transform.SetPositionAndRotation(position, rotation);
+
+			if (prevRotation != rotation)
+			{
+				NetworkServer.UnSpawn(cloudObject);
+				NetworkServer.Spawn(cloudObject);
+			}
+		}
+
 		cloudObject.transform.localScale = Scale;
-		HazardDuration = Mathf.Max(0f, HazardDuration);
 
 		if (cloudObject.TryGetComponent(out PrismaticCloud cloud))
 		{
 			Configure(cloud);
-			SyncPosition(cloud, position);
+
+			if (isNew)
+			{
+				Timing.CallDelayed(0.1f, () =>
+				{
+					if (cloudObject == null)
+						return;
+
+					cloudObject.transform.SetPositionAndRotation(position, rotation);
+					SyncPosition(cloud, position);
+				});
+			}
+			else
+			{
+				SyncPosition(cloud, position);
+			}
 		}
 
 		_prevHazardDuration = HazardDuration;
@@ -69,9 +99,6 @@ public sealed class SerializablePrismaticCloud : SerializableObject, IIndicatorD
 		_prevEffectIntensity = EffectIntensity;
 		_prevEffectDuration = EffectDuration;
 		_prevIsDestroyable = IsDestroyable;
-
-		if (instance == null)
-			NetworkServer.Spawn(cloudObject);
 
 		return cloudObject;
 	}

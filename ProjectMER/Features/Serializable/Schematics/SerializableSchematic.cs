@@ -115,7 +115,34 @@ public class SerializableSchematic : SerializableObject, IIndicatorDefinition
 			    BlockType.Generator and not
 			    BlockType.PrismaticCloud)
 				continue;
-			var gameObject = schematicObject.ObjectFromId[block.ObjectId].gameObject;
+			if (!schematicObject.ObjectFromId.TryGetValue(block.ObjectId, out Transform blockTransform) || blockTransform == null)
+				continue;
+
+			var gameObject = blockTransform.gameObject;
+
+			if (block.BlockType == BlockType.PrismaticCloud)
+			{
+				if (!schematicObject.ObjectFromId.TryGetValue(block.ParentId, out Transform parentTransform))
+					continue;
+
+				Quaternion prevRotation = gameObject.transform.rotation;
+				gameObject.transform.SetParent(parentTransform);
+				gameObject.transform.localPosition = block.Position;
+				gameObject.transform.localRotation = Quaternion.Euler(block.Rotation);
+				gameObject.transform.localScale = block.Scale;
+				gameObject.transform.SetParent(null);
+
+				if (gameObject.TryGetComponent(out PrismaticCloud prismaticCloud))
+					SerializablePrismaticCloud.SyncPosition(prismaticCloud, gameObject.transform.position);
+
+				if (prevRotation != gameObject.transform.rotation)
+				{
+					NetworkServer.UnSpawn(gameObject);
+					NetworkServer.Spawn(gameObject);
+				}
+
+				continue;
+			}
 			
 			if (block.BlockType == BlockType.Door && updateDoors)
 			{
@@ -145,9 +172,6 @@ public class SerializableSchematic : SerializableObject, IIndicatorDefinition
 				structurePositionSync.Network_rotationY =
 					(sbyte)Mathf.RoundToInt(gameObject.transform.rotation.eulerAngles.y / 5.625f);
 			}
-
-			if (block.BlockType == BlockType.PrismaticCloud && gameObject.TryGetComponent(out PrismaticCloud prismaticCloud))
-				SerializablePrismaticCloud.SyncPosition(prismaticCloud, gameObject.transform.position);
 
 			if (gameObject.TryGetComponent(out SpawnableCullingParent spawnableCullingParent))
 			{
