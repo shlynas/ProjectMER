@@ -1,8 +1,11 @@
 using LabApi.Events.Arguments.PlayerEvents;
 using LabApi.Events.Arguments.Scp079Events;
 using LabApi.Events.CustomHandlers;
+using LabApi.Features.Wrappers;
 using MEC;
+using NorthwoodLib.Pools;
 using PlayerRoles;
+using PlayerRoles.PlayableScps.Scp079;
 using ProjectMER.Features;
 using ProjectMER.Features.Objects;
 using ProjectMER.Features.Serializable;
@@ -143,11 +146,11 @@ public class GenericEventsHandler : CustomEventsHandler
 					zone.AddPlayer(ev.Player);
 				}
 			});
-		} else if (ev.OldRole == RoleTypeId.Filmmaker)
+		} else if (ev.OldRole is RoleTypeId.Filmmaker or RoleTypeId.Spectator or RoleTypeId.Overwatch)
 		{
 			Timing.CallDelayed(0.5f, () =>
 			{
-				if (ev.Player == null || ev.Player.IsDestroyed || ev.NewRole.RoleTypeId == RoleTypeId.Filmmaker)
+				if (ev.Player == null || ev.Player.IsDestroyed || ev.NewRole.RoleTypeId is RoleTypeId.Filmmaker)
 					return;
 				foreach (var zone in CullingZoneObject.AllCullingZone)
 				{
@@ -167,20 +170,12 @@ public class GenericEventsHandler : CustomEventsHandler
 	{
 		if (CullingZoneObject.AllCullingZone.Count == 0)
 			return;
-		if (ev.Player == null || ev.Player.IsDestroyed || ev.Player.IsNpc || ev.Player.IsDummy || ev.NewTarget == null)
+		if (ev.Player == null || ev.Player.IsDestroyed || ev.Player.IsNpc || ev.Player.IsDummy)
 			return;
 
 		foreach (var zone in CullingZoneObject.AllCullingZone)
 		{
-			if (ev.OldTarget != null && zone.Contains(ev.OldTarget) && !zone.Contains(ev.NewTarget))
-			{
-				zone.HideFor(ev.Player);
-			}
-
-			if (zone.Contains(ev.NewTarget) && (ev.OldTarget == null || !zone.Contains(ev.OldTarget)))
-			{
-				zone.ShowFor(ev.Player);
-			}
+			zone.UpdateSpectatorTarget(ev.Player, ev.OldTarget, ev.NewTarget);
 		}
 	}
 
@@ -192,23 +187,57 @@ public class GenericEventsHandler : CustomEventsHandler
 		if (ev.Player.IsDestroyed || ev.Player.IsDummy || ev.Player.IsNpc)
 			return;
 		
+		var targetCamera = ev.Camera.Base;
+		var targets = ListPool<Player>.Shared.Rent();
+		var spectators = ev.Player.CurrentSpectators;
+		try
+		{
+			targets.Add(ev.Player);
+			targets.AddRange(spectators);
+
+			foreach (var zone in CullingZoneObject.AllCullingZone)
+			{
+				foreach (var target in targets)
+				{
+					zone.RemovePlayer(target);
+				}
+			}
+
+			var colliders = Physics.OverlapSphere(
+				targetCamera.CameraAnchor.position,
+				0.5f,
+				-1,
+				QueryTriggerInteraction.Collide);
+
+			foreach (var collider in colliders)
+			{
+				if (collider.TryGetComponent(out CullingZoneObject cullingContainer))
+				{
+					foreach (var target in targets)
+					{
+						cullingContainer.AddPlayer(target);
+						foreach (var connected in cullingContainer.ConnectedZones)
+						{
+							if (connected == null)
+								continue;
+							connected.AddPlayer(target);
+						}
+					}
+				}
+			}
+		}
+		finally
+		{
+			ListPool<Player>.Shared.Return(spectators);
+			ListPool<Player>.Shared.Return(targets);
+		}
+	}
+
+	public override void OnPlayerLeft(PlayerLeftEventArgs ev)
+	{
 		foreach (var zone in CullingZoneObject.AllCullingZone)
 		{
-			zone.RemovePlayer(ev.Player);
-		}
-		
-		var colliders = Physics.OverlapSphere(
-			ev.Camera.Base.CameraAnchor.position,
-			0.5f,
-			-1,
-			QueryTriggerInteraction.Collide);
-
-		foreach (var collider in colliders)
-		{
-			if (collider.TryGetComponent(out CullingZoneObject cullingContainer))
-			{
-				cullingContainer.AddPlayer(ev.Player);
-			}
+			zone.OnPlayerLeft(ev.Player);
 		}
 	}
 }

@@ -39,7 +39,8 @@ public sealed class ActionInteractableToy
         if (schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnInteracted), out _) ||
             schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnSearching), out _) ||
             schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnSearched), out _) ||
-            schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnSearchAborted), out _))
+            schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnSearchAborted), out _) ||
+            schematicObject.TryGetActionsByEventId(block.ObjectId, nameof(OnAccessDenied), out _))
         {
             actionInteractableToy = new(block, toy, schematicObject);
         }
@@ -68,6 +69,11 @@ public sealed class ActionInteractableToy
     public void OnSearched(Player player)
     {
         SchematicObject.RunActionsByEventId(BlockData.ObjectId, nameof(OnSearched), player);
+    }
+
+    public void OnAccessDenied(Player player)
+    {
+        SchematicObject.RunActionsByEventId(BlockData.ObjectId, nameof(OnAccessDenied), player);
     }
 
     public bool CheckPermissions(Player player)

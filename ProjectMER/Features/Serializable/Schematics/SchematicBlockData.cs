@@ -1,9 +1,9 @@
 using AdminToys;
+using CommandSystem.Commands.Shared;
 using Footprinting;
 using Hazards;
 using Interactables.Interobjects.DoorUtils;
 using InventorySystem.Items.Firearms.Attachments;
-using InventorySystem.Items.Pickups;
 using LabApi.Features.Wrappers;
 using MapGeneration;
 using MapGeneration.Distributors;
@@ -79,6 +79,12 @@ public class SchematicBlockData
 			}
 		}
 
+		// ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+		if (Properties == null)
+		{
+			Properties = new();
+		}
+
 		GameObject? gameObject = BlockType switch
 		{
 			BlockType.Empty => CreateEmpty(schematicObject),
@@ -105,6 +111,7 @@ public class SchematicBlockData
 			BlockType.CullingZone => CreateCullingZone(),
 			BlockType.Generator => CreateGenerator(),
 			BlockType.PrismaticCloud => CreatePrismaticCloud(),
+			BlockType.CameraTransfer => CreateCameraTransfer(schematicObject),
 			_ => CreateEmpty(fallback: true)
 		};
 		
@@ -460,7 +467,15 @@ public class SchematicBlockData
 		{
 			if (i > convertedChambers.Count - 1)
 				break;
-
+			
+			if (chamber.Base is PrecisionLockerChamber precisionLockerChamber && chamber.Base.Spawnpoint == null)
+			{
+				if (precisionLockerChamber._spawnpointOverrides.Length > 1)
+					chamber.Base.Spawnpoint = precisionLockerChamber._spawnpointOverrides[1].Spawnpoint;
+				else if (precisionLockerChamber._spawnpointOverrides.Length == 1)
+					chamber.Base.Spawnpoint = precisionLockerChamber._spawnpointOverrides[0].Spawnpoint;
+			}
+			
 			chamber.AcceptableItems = convertedChambers[i].AcceptableItems.ToArray();
 			chamber.RequiredPermissions = convertedChambers[i].RequiredPermissions;
 			i++;
@@ -520,7 +535,7 @@ public class SchematicBlockData
 		Scp079CameraToy cameraVariant = GameObject.Instantiate(prefab);
 		cameraVariant.NetworkScale = Scale == Vector3.zero ? Vector3.one : Scale;
 		cameraVariant.NetworkMovementSmoothing = 60;
-		cameraVariant.Label = Convert.ToString(Properties["Label"]);
+		cameraVariant.NetworkLabel = Convert.ToString(Properties["Label"]);
 		cameraVariant.SetRoom(null, null);
 		
 		return cameraVariant.gameObject;
@@ -581,6 +596,10 @@ public class SchematicBlockData
 	private GameObject CreateWaypoint()
 	{
 		WaypointToy waypoint = GameObject.Instantiate(PrefabManager.Waypoint);
+		if (Properties.TryGetValue("Priority", out var priorityObj))
+		{
+			waypoint.NetworkPriority = Convert.ToSingle(priorityObj);
+		}
 		return waypoint.gameObject;
 	}
 
@@ -642,7 +661,11 @@ public class SchematicBlockData
 
 	public GameObject? CreateTrigger(SchematicObject schematicObject)
 	{
-		GameObject gameObject = GameObject.Instantiate(new GameObject("Trigger"));
+		var empty = CreateEmpty();
+		var gameObject = empty.gameObject;
+		gameObject.name = "Trigger";
+		gameObject.layer = 29;
+		
 		var primitiveType = (PrimitiveType)Convert.ToInt32(Properties["PrimitiveType"]);
 		Collider collider;
 		switch (primitiveType)
@@ -716,6 +739,7 @@ public class SchematicBlockData
 	{
 		var empty = CreateEmpty();
 		var cullingZoneObject = empty.AddComponent<CullingZoneObject>();
+		empty.layer = 29; // fence
 		
 		if (Properties.TryGetValue("ObjectPerSpawn", out object numberOfObjectPerSpawnObj))
 			cullingZoneObject.NumberOfObjectPerSpawn = Convert.ToInt32(numberOfObjectPerSpawnObj);
@@ -834,5 +858,44 @@ public class SchematicBlockData
 		}
 		
 		return generator.gameObject;
+	}
+
+	public GameObject? CreateCameraTransfer(SchematicObject schematicObject)
+	{
+		Scp079CameraToy prefab;
+		if (Properties.TryGetValue("CameraType", out object cameraObj))
+		{
+			prefab = (CameraType)Convert.ToInt32(cameraObj) switch
+			{
+				CameraType.Lcz => PrefabManager.CameraLcz,
+				CameraType.Hcz => PrefabManager.CameraHcz,
+				CameraType.Ez => PrefabManager.CameraEz,
+				CameraType.EzArm => PrefabManager.CameraEzArm,
+				CameraType.Sz => PrefabManager.CameraSz,
+				_ => throw new InvalidOperationException(),
+			};
+		}
+		else
+		{
+			prefab = PrefabManager.CameraLcz;
+		}
+		
+		var camera = GameObject.Instantiate(prefab);
+		Scale = new Vector3(0.01f, 0.01f, 0.01f);
+
+		if (Properties.TryGetValue("TargetCamera", out object targetCameraObj))
+		{
+			Timing.CallDelayed(0.2f, () =>
+			{
+				var id = Convert.ToInt32(targetCameraObj);
+				if (!schematicObject.ObjectFromId.TryGetValue(id, out var target) ||
+				    !target.TryGetComponent<Scp079CameraToy>(out var targetCamera))
+					return;
+				camera.gameObject.AddComponent<CameraTransferObject>().Init(camera.Camera, targetCamera.Camera);
+				camera.NetworkLabel = targetCamera.NetworkLabel;
+			});
+		}
+
+		return camera.gameObject;
 	}
 }

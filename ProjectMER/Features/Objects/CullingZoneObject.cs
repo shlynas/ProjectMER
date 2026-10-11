@@ -1,9 +1,15 @@
-﻿using AdminToys;
+using AdminToys;
 using LabApi.Features.Wrappers;
 using Mirror;
+using NorthwoodLib.Pools;
+using ProjectMER.Features.ClientSideToys;
+using ProjectMER.Features.Enums;
 using RelativePositioning;
 using UnityEngine;
+using LightSourceToy = AdminToys.LightSourceToy;
 using PrimitiveObjectToy = AdminToys.PrimitiveObjectToy;
+using SpeakerToy = AdminToys.SpeakerToy;
+using TextToy = AdminToys.TextToy;
 
 namespace ProjectMER.Features.Objects;
 
@@ -14,17 +20,21 @@ public sealed class CullingZoneObject : MonoBehaviour
     public int NumberOfObjectPerSpawn;
     public float ExitDebounceSeconds = 0.5f;
     public int BlocksCount => _networkIdentities.Count;
-    public bool Pause;
+    public bool Pause = true;
 
-    private readonly Dictionary<uint, int> _insidePlayers = new();
+    private readonly Dictionary<uint, HashSet<CullingZoneObject>> _insidePlayers = new();
     private readonly Dictionary<uint, CancellationTokenSource> _pendingHides = new();
     private readonly Dictionary<Player, int> _awaitingSpawn = new();
+    private readonly Dictionary<Player, int> _spawnedObjectCounts = new();
     private readonly HashSet<uint> _loadedPlayers = [];
 
     private readonly List<Player> _awaitingSpawnSnapshotBuffer = [];
     private readonly List<NetworkIdentity> _networkIdentities = [];
     private readonly HashSet<uint> _netIds = [];
+    private readonly Dictionary<uint, ClientSideAdminToy> _clientSideAdminToys = new();
     private bool _processingAwaiting;
+
+    #region State
 
     public bool Contains(Player player) => _insidePlayers.ContainsKey(player.NetworkId);
 
@@ -33,6 +43,37 @@ public sealed class CullingZoneObject : MonoBehaviour
         return _netIds.Contains(networkIdentity.netId);
     }
 
+    public void OnPlayerLeft(Player player)
+    {
+        _awaitingSpawn.Remove(player);
+        _spawnedObjectCounts.Remove(player);
+        if (_pendingHides.TryGetValue(player.NetworkId, out var cts))
+            cts.Cancel();
+        _insidePlayers.Remove(player.NetworkId);
+        _loadedPlayers.Remove(player.NetworkId);
+    }
+    
+    public void Init()
+    {
+        if (_networkIdentities.Count != 0)
+        {
+            foreach (var networkIdentity in _networkIdentities)
+            {
+                networkIdentity.visible = Visibility.ForceHidden;
+                NetworkServer.SendToObservers<ObjectHideMessage>(networkIdentity, new ObjectHideMessage()
+                {
+                    netId = networkIdentity.netId
+                });
+                networkIdentity.ClearObservers();
+            }
+        }
+        Pause = false;
+    }
+
+    #endregion
+
+    #region Unity lifecycle
+
     private void Start()
     {
         AllCullingZone.Add(this);
@@ -40,8 +81,13 @@ public sealed class CullingZoneObject : MonoBehaviour
 
     private void OnDestroy()
     {
+        _processingAwaiting = false;
         AllCullingZone.Remove(this);
     }
+
+    #endregion
+
+    #region Trigger handling
 
     private void OnTriggerEnter(Collider other)
     {
@@ -55,11 +101,7 @@ public sealed class CullingZoneObject : MonoBehaviour
         if (player is null)
             return;
 
-        AddPlayer(player);
-        foreach (var zone in ConnectedZones)
-        {
-            zone.AddPlayer(player);
-        }
+        UpdatePlayerPresence(player, true);
     }
 
     private void OnTriggerExit(Collider other)
@@ -74,59 +116,12 @@ public sealed class CullingZoneObject : MonoBehaviour
         if (player is null)
             return;
 
-        RemovePlayer(player);
-
-        foreach (var zone in ConnectedZones)
-        {
-            zone.RemovePlayer(player);
-        }
+        UpdatePlayerPresence(player, false);
     }
 
-    public async Awaitable InitializeAsync()
-    {
-        _networkIdentities.Clear();
+    #endregion
 
-        var queue = new Queue<Transform>();
-        foreach (Transform child in transform)
-            queue.Enqueue(child);
-
-        float budgetDeadline = Time.realtimeSinceStartup + 2f / 1000f;
-
-        while (queue.Count > 0)
-        {
-            if (Time.realtimeSinceStartup >= budgetDeadline)
-            {
-                await Awaitable.NextFrameAsync();
-                budgetDeadline = Time.realtimeSinceStartup + 2f / 1000f;
-            }
-
-            var current = queue.Dequeue();
-            if (current == null || current.TryGetComponent<CullingZoneObject>(out _))
-                continue;
-            if (current.TryGetComponent(out PrimitiveObjectToy primitiveObjectToy) &&
-                primitiveObjectToy.gameObject.name == Scp106PassableObject.ColliderName)
-                continue;
-
-            if (!current.TryGetComponent<WaypointBase>(out _) &&
-                !current.TryGetComponent<Scp079CameraToy>(out _) &&
-                !current.TryGetComponent<PlayerBlockerObject>(out _) &&
-                current.TryGetComponent<NetworkIdentity>(out var networkIdentity))
-            {
-                networkIdentity.visible = Visibility.ForceHidden;
-                NetworkServer.SendToObservers<ObjectHideMessage>(networkIdentity, new ObjectHideMessage()
-                {
-                    netId = networkIdentity.netId
-                });
-                networkIdentity.ClearObservers();
-
-                _netIds.Add(networkIdentity.netId);
-                _networkIdentities.Add(networkIdentity);
-            }
-
-            foreach (Transform child in current)
-                queue.Enqueue(child);
-        }
-    }
+    #region Spawn queue
 
     private async Awaitable ProcessAwaitingAsync()
     {
@@ -149,15 +144,15 @@ public sealed class CullingZoneObject : MonoBehaviour
                     if (player.IsDestroyed)
                     {
                         _awaitingSpawn.Remove(player);
+                        _spawnedObjectCounts.Remove(player);
                         continue;
                     }
 
                     if (!_insidePlayers.ContainsKey(player.NetworkId))
                     {
+                        _awaitingSpawn.Remove(player);
                         continue;
                     }
-
-                    var spectators = player.CurrentSpectators.ToList();
 
                     var index = _awaitingSpawn[player];
                     var end = Mathf.Min(index + NumberOfObjectPerSpawn, _networkIdentities.Count);
@@ -172,13 +167,17 @@ public sealed class CullingZoneObject : MonoBehaviour
                             continue;
                         }
 
-                        _networkIdentities[i].AddObserver(player.ConnectionToClient);
-                        foreach (var spectator in spectators)
+                        if (_clientSideAdminToys.TryGetValue(_networkIdentities[i].netId,
+                                out var clientSideAdminToy))
                         {
-                            _networkIdentities[i].AddObserver(spectator.ConnectionToClient);
+                            clientSideAdminToy.Spawn(player.ConnectionToClient);
+                            continue;
                         }
+
+                        _networkIdentities[i].AddObserver(player.ConnectionToClient);
                     }
 
+                    _spawnedObjectCounts[player] = end;
                     if (end >= _networkIdentities.Count)
                     {
                         _loadedPlayers.Add(player.NetworkId);
@@ -198,10 +197,137 @@ public sealed class CullingZoneObject : MonoBehaviour
         }
         catch (OperationCanceledException)
         {
+            Logger.Warn($"Operation canceled for CullingZone ({gameObject.name})");
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex.ToString());
         }
         finally
         {
             _processingAwaiting = false;
+        }
+    }
+
+    #endregion
+
+    #region Object collection
+
+    public void RegisterObject(GameObject go, BlockType blockType)
+    {
+        if (!go.TryGetComponent<NetworkBehaviour>(out _) ||
+            !go.TryGetComponent<NetworkIdentity>(out var networkIdentity))
+        {
+            return;
+        }
+
+        if (blockType is BlockType.AudioPlayer or BlockType.Camera or BlockType.Waypoint or BlockType.Door
+                or BlockType.PlayerBlocker or BlockType.CameraTransfer || go.TryGetComponent<Scp106PassableObject>(out _))
+        {
+            RemoveParentObjects(go.transform);
+            return;
+        }
+
+        if (go.transform.parent.TryGetComponent<Scp106PassableObject>(out var childObject) && childObject.Collider.gameObject == go)
+        {
+            RemoveParentObjects(childObject.transform);
+            return;
+        }
+
+        _networkIdentities.Add(networkIdentity);
+        _netIds.Add(networkIdentity.netId);
+        
+        if (go.TryGetComponent<FlickerController>(out _))
+            return;
+
+        if (go.GetComponentInParent<AnimatorMarker>() == null && go.TryGetComponent<AdminToyBase>(out var adminToyBase) && adminToyBase.NetworkIsStatic)
+        {
+            ClientSideAdminToy? clientSideAdminToy = null;
+            if (adminToyBase is PrimitiveObjectToy primitiveObjectToy)
+            {
+                clientSideAdminToy = new ClientSidePrimitive(primitiveObjectToy);
+            }
+            else if (adminToyBase is LightSourceToy lightSourceToy)
+            {
+                clientSideAdminToy = new ClientSideLightSourceToy(lightSourceToy);
+            }
+            else if (adminToyBase is TextToy textToy)
+            {
+                clientSideAdminToy = new ClientSideTextToy(textToy);
+            }
+
+            if (clientSideAdminToy != null)
+            {
+                _clientSideAdminToys[networkIdentity.netId] = clientSideAdminToy;
+            }
+        }
+    }
+
+    public async Awaitable InitializeAsync()
+    {
+        _networkIdentities.Clear();
+
+        var queue = new Queue<Transform>();
+        foreach (Transform child in transform)
+            queue.Enqueue(child);
+
+        float budgetDeadline = Time.realtimeSinceStartup + 10f / 1000f;
+
+        while (queue.Count > 0)
+        {
+            if (Time.realtimeSinceStartup >= budgetDeadline)
+            {
+                await Awaitable.NextFrameAsync();
+                budgetDeadline = Time.realtimeSinceStartup + 10f / 1000f;
+            }
+
+            var current = queue.Dequeue();
+            if (current == null || current.TryGetComponent<CullingZoneObject>(out _))
+                continue;
+            if (current.TryGetComponent(out PrimitiveObjectToy primitiveObjectToy) &&
+                primitiveObjectToy.gameObject.name == Scp106PassableObject.ColliderName)
+                continue;
+
+            if (current.TryGetComponent<NetworkIdentity>(out var networkIdentity))
+            {
+                _netIds.Add(networkIdentity.netId);
+                _networkIdentities.Add(networkIdentity);
+            }
+
+            if (current.TryGetComponent<WaypointBase>(out _) ||
+                current.TryGetComponent<Scp079CameraToy>(out _) ||
+                current.TryGetComponent<PlayerBlockerObject>(out _) ||
+                current.TryGetComponent<Scp106PassableObject>(out _) ||
+                current.TryGetComponent<SpeakerToy>(out _))
+            {
+                RemoveParentObjects(current);
+            }
+            else
+            {
+                ClientSideAdminToy? clientSideAdminToy = null;
+                if (current.TryGetComponent(out primitiveObjectToy))
+                    clientSideAdminToy = new ClientSidePrimitive(primitiveObjectToy);
+                else if (current.TryGetComponent(out LightSourceToy lightSourceToy))
+                    clientSideAdminToy = new ClientSideLightSourceToy(lightSourceToy);
+                else if (current.TryGetComponent(out TextToy textToy))
+                    clientSideAdminToy = new ClientSideTextToy(textToy);
+
+                if (clientSideAdminToy != null)
+                {
+                    _clientSideAdminToys[networkIdentity.netId] = clientSideAdminToy;
+                }
+
+                networkIdentity.visible = Visibility.ForceHidden;
+                NetworkServer.SendToObservers<ObjectHideMessage>(networkIdentity, new ObjectHideMessage()
+                {
+                    netId = networkIdentity.netId
+                });
+                networkIdentity.ClearObservers();
+            }
+
+            foreach (Transform child in current)
+                queue.Enqueue(child);
         }
     }
 
@@ -210,7 +336,34 @@ public sealed class CullingZoneObject : MonoBehaviour
         _netIds.Clear();
         foreach (var networkIdentity in _networkIdentities)
         {
+            if (networkIdentity == null)
+                continue;
             _netIds.Add(networkIdentity.netId);
+        }
+    }
+
+    private void RemoveParentObjects(Transform current)
+    {
+        if (current == null)
+            return;
+
+        while (true)
+        {
+            if (current.TryGetComponent<CullingZoneObject>(out _) || current.TryGetComponent<SchematicObject>(out _))
+                return;
+            if (!current.TryGetComponent<NetworkIdentity>(out var networkIdentity))
+            {
+                if (current.parent == null)
+                    return;
+                current = current.parent;
+                continue;
+            }
+
+            _netIds.Remove(networkIdentity.netId);
+            _networkIdentities.Remove(networkIdentity);
+            if (current.parent == null)
+                return;
+            current = current.parent;
         }
     }
 
@@ -223,11 +376,11 @@ public sealed class CullingZoneObject : MonoBehaviour
         var netIds = target.GetComponentsInChildren<NetworkIdentity>();
         foreach (var identity in netIds)
         {
-            RemoveSingleObject(identity);
+            RemoveSingleObject(identity, true);
         }
     }
 
-    private void RemoveSingleObject(NetworkIdentity target)
+    private void RemoveSingleObject(NetworkIdentity target, bool isChild = false)
     {
         if (!Contains(target))
             return;
@@ -239,19 +392,77 @@ public sealed class CullingZoneObject : MonoBehaviour
         _netIds.Remove(target.netId);
         _networkIdentities.RemoveAt(removedIndex);
         target.visible = Visibility.Default;
-        target.transform.SetParent(null);
+        if (!isChild)
+            target.transform.SetParent(null);
 
-        if (_awaitingSpawn.Count <= 0)
+        DecrementSpawnedObjectCountsAfterRemoval(_awaitingSpawn, removedIndex);
+        DecrementSpawnedObjectCountsAfterRemoval(_spawnedObjectCounts, removedIndex);
+    }
+
+    #endregion
+
+    #region Player presence
+
+    private void UpdatePlayerPresence(Player player, bool isEntering)
+    {
+        UpdatePlayerPresenceForZone(player, this, isEntering);
+        foreach (var zone in ConnectedZones)
+        {
+            zone.UpdatePlayerPresenceForZone(player, this, isEntering);
+        }
+
+        ForEachSpectator(player, spectator =>
+        {
+            UpdatePlayerPresenceForZone(spectator, this, isEntering);
+            foreach (var zone in ConnectedZones)
+            {
+                zone.UpdatePlayerPresenceForZone(spectator, this, isEntering);
+            }
+        });
+    }
+
+    private void UpdatePlayerPresenceForZone(Player player, CullingZoneObject source, bool isEntering)
+    {
+        if (isEntering)
+            AddPlayer(player, source);
+        else
+            RemovePlayer(player, source);
+    }
+
+    public void UpdateSpectatorTarget(Player spectator, Player? oldTarget, Player? newTarget)
+    {
+        if (spectator == null || spectator.IsDestroyed || spectator.IsDummy || spectator.IsNpc)
             return;
 
-        foreach (var player in _awaitingSpawn.Keys.ToList())
+        var oldSources = oldTarget != null && _insidePlayers.TryGetValue(oldTarget.NetworkId, out var sources)
+            ? sources
+            : null;
+        var newSources = newTarget != null && _insidePlayers.TryGetValue(newTarget.NetworkId, out sources)
+            ? sources
+            : null;
+
+        if (oldSources != null)
         {
-            if (_awaitingSpawn[player] > removedIndex)
-                _awaitingSpawn[player]--;
+            foreach (var source in oldSources)
+            {
+                if (newSources == null || !newSources.Contains(source))
+                    RemovePlayer(spectator, source);
+            }
+        }
+
+        if (newSources == null)
+            return;
+
+        foreach (var source in newSources)
+        {
+            if (oldSources == null || !oldSources.Contains(source))
+                AddPlayer(spectator, source);
         }
     }
 
-    public void AddPlayer(Player player)
+    public void AddPlayer(Player player) => AddPlayer(player, this);
+
+    private void AddPlayer(Player player, CullingZoneObject source)
     {
         if (player == null || player.IsDestroyed || player.IsDummy || player.IsNpc)
             return;
@@ -259,44 +470,69 @@ public sealed class CullingZoneObject : MonoBehaviour
         var hadPendingHide = _pendingHides.Remove(player.NetworkId, out var pendingCts);
         pendingCts?.Cancel();
 
-        var count = _insidePlayers.GetValueOrDefault(player.NetworkId) + 1;
-        _insidePlayers[player.NetworkId] = count;
-        if (BlocksCount == 0)
-            return;
+        if (!_insidePlayers.TryGetValue(player.NetworkId, out var sources))
+        {
+            sources = [];
+            _insidePlayers[player.NetworkId] = sources;
+        }
 
-        if (count > 1 || (_loadedPlayers.Contains(player.NetworkId) && hadPendingHide))
+        var wasInside = sources.Count > 0;
+        sources.Add(source);
+        if (BlocksCount == 0)
+        {
+            _spawnedObjectCounts.Remove(player);
+            return;
+        }
+
+        if (wasInside || (_loadedPlayers.Contains(player.NetworkId) && hadPendingHide))
             return;
 
         if (NumberOfObjectPerSpawn > 0)
         {
-            _awaitingSpawn.TryAdd(player, 0);
+            var spawnedObjectCount = _spawnedObjectCounts.GetValueOrDefault(player, 0);
+            _awaitingSpawn.TryAdd(player, spawnedObjectCount);
 
             if (!_processingAwaiting && !Pause)
+            {
                 _ = ProcessAwaitingAsync();
+            }
+
             return;
         }
 
         if (!Pause)
+        {
             ShowFor(player);
+            _spawnedObjectCounts[player] = _networkIdentities.Count;
+        }
 
         _loadedPlayers.Add(player.NetworkId);
     }
 
-    public void RemovePlayer(Player player)
+    public void RemovePlayer(Player player) => RemovePlayer(player, null);
+
+    private void RemovePlayer(Player player, CullingZoneObject? source)
     {
         if (player == null || player.IsDestroyed || player.IsDummy || player.IsNpc)
             return;
 
-        if (!_insidePlayers.TryGetValue(player.NetworkId, out var count))
+        if (!_insidePlayers.TryGetValue(player.NetworkId, out var sources))
             return;
 
-        if (count > 1)
-        {
-            _insidePlayers[player.NetworkId] = count - 1;
+        if (source == null)
+            sources.Clear();
+        else
+            sources.Remove(source);
+
+        if (sources.Count > 0)
             return;
-        }
 
         _insidePlayers.Remove(player.NetworkId);
+
+        if (_awaitingSpawn.Remove(player, out var spawnedObjectCount))
+        {
+            _spawnedObjectCounts[player] = spawnedObjectCount;
+        }
 
         if (BlocksCount == 0)
             return;
@@ -308,6 +544,10 @@ public sealed class CullingZoneObject : MonoBehaviour
         _pendingHides[player.NetworkId] = cts;
         _ = DebouncedHideAsync(player, cts);
     }
+
+    #endregion
+
+    #region Delayed hide
 
     private async Awaitable DebouncedHideAsync(Player player, CancellationTokenSource cts)
     {
@@ -323,6 +563,7 @@ public sealed class CullingZoneObject : MonoBehaviour
             if (!Pause)
                 HideFor(player);
             _awaitingSpawn.Remove(player);
+            _spawnedObjectCounts.Remove(player);
         }
         catch (OperationCanceledException)
         {
@@ -337,21 +578,19 @@ public sealed class CullingZoneObject : MonoBehaviour
         }
     }
 
+    #endregion
+
+    #region Network visibility
+
     public void ShowFor(Player player)
     {
         if (_networkIdentities.Count == 0)
             return;
         if (player == null || player.IsDestroyed || player.IsDummy || player.IsNpc)
             return;
-        var spectators = player.CurrentSpectators;
+
         foreach (var identity in _networkIdentities)
-        {
             identity.AddObserver(player.ConnectionToClient);
-            foreach (var spectator in spectators)
-            {
-                identity.AddObserver(spectator.ConnectionToClient);
-            }
-        }
     }
 
     public void HideFor(Player player)
@@ -360,9 +599,8 @@ public sealed class CullingZoneObject : MonoBehaviour
             return;
         if (player == null || player.IsDestroyed || player.IsDummy || player.IsNpc)
             return;
-        var spectators = player.CurrentSpectators;
-
-        if (!_awaitingSpawn.TryGetValue(player, out var index))
+        if (!_spawnedObjectCounts.TryGetValue(player, out var index) &&
+            !_awaitingSpawn.TryGetValue(player, out index))
         {
             index = _networkIdentities.Count;
         }
@@ -373,11 +611,37 @@ public sealed class CullingZoneObject : MonoBehaviour
         {
             player.ConnectionToClient.RemoveFromObserving(_networkIdentities[i], false);
             _networkIdentities[i].RemoveObserver(player.ConnectionToClient);
-            foreach (var spectator in spectators)
-            {
-                spectator.ConnectionToClient.RemoveFromObserving(_networkIdentities[i], false);
-                _networkIdentities[i].RemoveObserver(player.ConnectionToClient);
-            }
         }
     }
+
+    private static void DecrementSpawnedObjectCountsAfterRemoval(Dictionary<Player, int> spawnedObjectCounts,
+        int removedIndex)
+    {
+        foreach (var player in spawnedObjectCounts.Keys.ToList())
+        {
+            if (spawnedObjectCounts[player] > removedIndex)
+                spawnedObjectCounts[player]--;
+        }
+    }
+
+    private static void ForEachSpectator(Player player, Action<Player> action)
+    {
+        var spectators = player.CurrentSpectators;
+        try
+        {
+            foreach (var spectator in spectators)
+            {
+                if (spectator == null || spectator.IsDestroyed || spectator.IsDummy || spectator.IsNpc)
+                    continue;
+
+                action(spectator);
+            }
+        }
+        finally
+        {
+            ListPool<Player>.Shared.Return(spectators);
+        }
+    }
+
+    #endregion
 }

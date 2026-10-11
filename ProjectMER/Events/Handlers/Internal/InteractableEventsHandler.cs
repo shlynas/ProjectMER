@@ -15,7 +15,10 @@ public sealed class InteractableEventsHandler : CustomEventsHandler
             return;
 
         if (!instance.CheckPermissions(ev.Player))
+        {
+            instance.OnAccessDenied(ev.Player);
             return;
+        }
 
         instance.OnInteracted(ev.Player);
     }
@@ -27,6 +30,7 @@ public sealed class InteractableEventsHandler : CustomEventsHandler
 
         if (!instance.CheckPermissions(ev.Player))
         {
+            instance.OnAccessDenied(ev.Player);
             ev.IsAllowed = false;
             instance.PermissionsRejected = true;
             return;

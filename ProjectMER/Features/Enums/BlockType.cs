@@ -61,4 +61,5 @@ public enum BlockType
 	CullingZone = 41,
 	Generator = 42,
 	PrismaticCloud = 43,
+	CameraTransfer = 44,
 }
